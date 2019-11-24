@@ -1,25 +1,102 @@
 import { Injectable } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+
+import { Observable, of } from 'rxjs';
+import { catchError, map, tap } from 'rxjs/operators';
+
 import { Hero } from './hero';
-import { HEROES } from './mock-heroes';
-import { Observable, of } from 'rxjs';  //   서버에서 받아오기 구현
-import { MessageService } from './message.service'; // service - in - service
-@Injectable({
-  providedIn: 'root'
-})
+import { MessageService } from './message.service';
+
+const httpOptions = {
+  headers: new HttpHeaders({ 'Content-Type': 'application/json' })
+};
+
+@Injectable({ providedIn: 'root' })
 export class HeroService {
 
-
-
-  getHeroes(): Observable<Hero[]> {
-    this.messageService.add('HeroService: fetched heroes'); // 데이터 받아오면 받아왔다고 메세지 표시하기(메세지 서비스에 메세지 보내기.).
-                                                            // 메세지 표시는 메세지 서비스 쪽에서 
-    return of (HEROES);   // of : 자동으로 함수 return형에 맞춰서 반환하는듯?
+  addHero (hero: Hero): Observable<Hero> {
+    return this.http.post<Hero>(this.heroesUrl, hero, httpOptions).pipe(
+      tap((newHero: Hero) => this.log(`added hero w/ id=${newHero.id}`)),
+      catchError(this.handleError<Hero>('addHero'))
+    );
+  }
+  deleteHero (hero: Hero | number): Observable<Hero> {
+    const id = typeof hero === 'number' ? hero : hero.id;
+    const url = `${this.heroesUrl}/${id}`;
+  
+    return this.http.delete<Hero>(url, httpOptions).pipe(
+      tap(_ => this.log(`deleted hero id=${id}`)),
+      catchError(this.handleError<Hero>('deleteHero'))
+    );
   }
 
+  searchHeroes(term: string): Observable<Hero[]> {
+    if (!term.trim()) {
+      // 입력된 내용이 없으면 빈 배열을 반환합니다.
+      return of([]);
+    }
+    return this.http.get<Hero[]>(`${this.heroesUrl}/?name=${term}`).pipe(
+      tap(_ => this.log(`found heroes matching "${term}"`)),
+      catchError(this.handleError<Hero[]>('searchHeroes', []))
+    );
+  }
+
+  getHeroes (): Observable<Hero[]> {
+    return this.http.get<Hero[]>(this.heroesUrl)
+      .pipe(
+        tap(_ => this.log('fetched heroes')),
+        catchError(this.handleError<Hero[]>('getHeroes', []))
+      );
+  }
+
+  
   getHero(id: number): Observable<Hero> {
-    this.messageService.add(`HeroService: fetched hero id=${id}`);  // javascript
-    return of(HEROES.find(hero => hero.id === id));
+    const url = `${this.heroesUrl}/${id}`;
+    return this.http.get<Hero>(url).pipe(
+      tap(_ => this.log(`fetched hero id=${id}`)),
+      catchError(this.handleError<Hero>(`getHero id=${id}`))
+    );
   }
 
-  constructor(private messageService: MessageService) { }
+  getHeroNo404<Hero>(id: number): Observable<Hero> {
+    const url = `${this.heroesUrl}/?id=${id}`;
+    return this.http.get<Hero[]>(url)
+      .pipe(
+        map(heroes => heroes[0]), 
+        tap(h => {
+          const outcome = h ? `fetched` : `did not find`;
+          this.log(`${outcome} hero id=${id}`);
+        }),
+        catchError(this.handleError<Hero>(`getHero id=${id}`))
+      );
+  }
+  constructor(private http: HttpClient, private messageService: MessageService) { }
+
+  private log(message: string) {
+    this.messageService.add(`HeroService: ${message}`);
+  }
+  
+
+  updateHero (hero: Hero): Observable<any> {
+    return this.http.put(this.heroesUrl, hero, httpOptions).pipe(
+      tap(_ => this.log(`updated hero id=${hero.id}`)),
+      catchError(this.handleError<any>('updateHero'))
+    );
+  }
+
+  private heroesUrl = 'api/heroes';
+
+  private handleError<T> (operation = 'operation', result?: T) {
+    return (error: any): Observable<T> => {
+   
+      // 리모트 서버로 에러 메시지 보내기
+      console.error(error); 
+   
+      // 사용자가 이해할 수 있는 형태로 변환하기
+      this.log(`${operation} failed: ${error.message}`);
+   
+      // 애플리케이션 로직이 끊기지 않도록 기본값으로 받은 객체를 반환
+      return of(result as T);
+    };
+  } 
 }
